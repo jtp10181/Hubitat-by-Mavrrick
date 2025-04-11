@@ -4,6 +4,7 @@
     Copyright 2020 -> 2021 Hubitat Inc.  All Rights Reserved
     Special Thanks to Bryan Copeland (@bcopeland) for writing and releasing this code to the community!
 
+    1.2.6 - 04/11/25 - Update to eliminate manual hex parsing (for ZWaveJS compatibility) @jtp10181
     1.2.5 - 08/02/22 - Rework Driver to allow options to use Subscription to armingIn device status for apps that support it @mavrrick58
     1.2.4 - 08/01/22 - Rollback Changes
     1.2.3 - 07/31/22 - remove Redundent calls causing multiple events in HSM. Added Additional Logging. @mavrrick58
@@ -18,7 +19,7 @@ import groovy.transform.Field
 import groovy.json.JsonOutput
 
 def version() {
-    return "1.2.5"
+    return "1.2.6"
 }
 
 metadata {
@@ -103,7 +104,7 @@ metadata {
         0x0A: [securityKeypadState: "armed home", hsmCmd: "armHome"],
         0x0B: [securityKeypadState: "armed away", hsmCmd: "armAway"]
 ]
-@Field static Map CMD_CLASS_VERS=[0x86:2, 0x70:1, 0x20:1, 0x86:3]
+@Field static Map CMD_CLASS_VERS=[0x86:2, 0x70:1, 0x20:1, 0x86:3, 0x6F:1]
 
 void logsOff(){
     log.warn "debug logging disabled..."
@@ -548,24 +549,26 @@ void zwaveEvent(hubitat.zwave.commands.basicv1.BasicReport cmd) {
     // this is redundant/ambiguous and I don't care what happens here
 }
 
-void parseEntryControl(Short command, List<Short> commandBytes) {
-    if (logEnable) log.debug "In parseEntryControl (${version()})"
+//void parseEntryControl(Short command, List<Short> commandBytes) {
+void zwaveEvent(hubitat.zwave.commands.entrycontrolv1.EntryControlNotification cmd) {
+    if (logEnable) log.debug "${cmd}"
     //log.debug "parse: ${command}, ${commandBytes}"
-    if (command == 0x01) {
+
+//    if (command == 0x01) {
         Map ecn = [:]
-        ecn.sequenceNumber = commandBytes[0]
-        ecn.dataType = commandBytes[1]
-        ecn.eventType = commandBytes[2]
-        ecn.eventDataLength = commandBytes[3]
+        ecn.sequenceNumber = cmd.sequenceNumber
+        ecn.dataType = cmd.dataType
+        ecn.eventType = cmd.eventType
+//        ecn.eventDataLength = commandBytes[3]
         def currentStatus = device.currentValue('securityKeypad')
         def alarmStatus = device.currentValue('alarm')
-        String code=""
-        if (ecn.eventDataLength>0) {
-            for (int i in 4..(ecn.eventDataLength+3)) {
-                if (logEnable) log.debug "character ${i}, value ${commandBytes[i]}"
-                code += (char) commandBytes[i]
-            }
-        }
+        String code = (cmd.eventData as String)
+//        if (ecn.eventDataLength>0) {
+//            for (int i in 4..(ecn.eventDataLength+3)) {
+//                if (logEnable) log.debug "character ${i}, value ${commandBytes[i]}"
+//                code += (char) commandBytes[i]
+//            }
+//        }
         if (logEnable) log.debug "Entry control: ${ecn} keycache: ${code}"
         switch (ecn.eventType) {
             case 5:    // Away Mode Button
@@ -698,7 +701,6 @@ void parseEntryControl(Short command, List<Short> commandBytes) {
                 handleButtons(code)
                 break
         }
-    }
 }
 
 void handleButtons(String code) {
@@ -1042,14 +1044,14 @@ void zwaveEvent(hubitat.zwave.commands.securityv1.SecurityMessageEncapsulation c
 
 void zwaveEvent(hubitat.zwave.commands.supervisionv1.SupervisionGet cmd) {
     if (logEnable) log.debug "Supervision Get - SessionID: ${cmd.sessionID}, CC: ${cmd.commandClassIdentifier}, Command: ${cmd.commandIdentifier}"
-    if (cmd.commandClassIdentifier == 0x6F) {
-        parseEntryControl(cmd.commandIdentifier, cmd.commandByte)
-    } else {
+//    if (cmd.commandClassIdentifier == 0x6F) {
+//        parseEntryControl(cmd.commandIdentifier, cmd.commandByte)
+//    } else {
         hubitat.zwave.Command encapsulatedCommand = cmd.encapsulatedCommand(CMD_CLASS_VERS)
         if (encapsulatedCommand) {
             zwaveEvent(encapsulatedCommand)
         }
-    }
+//    }
     // device quirk requires this to be unsecure reply
     sendToDevice(zwave.supervisionV1.supervisionReport(sessionID: cmd.sessionID, reserved: 0, moreStatusUpdates: false, status: 0xFF, duration: 0).format())
 }
